@@ -1,0 +1,330 @@
+# simulation of semi-supervised learning for validity studies
+
+from math import *
+from random import *
+
+# use List::Util qw(sum shuffle)
+# use Statistics::Basic qw/correlation/
+# use Data::Dumper
+
+# # impute - performs score matching imputation
+def impute(data,score): 
+  set_ = data[score]
+  print(data,score)
+  if len(set_) > 0:
+    return choice(set_)
+  else:
+    return 0
+# impute
+
+
+# # old (slow) impute - performs score matching imputation
+def old_slow_impute(data,score,nmatch):
+  # if we ever run this old code, we get an assertion
+  # die( "returns ID's, not Y values. seems like a bug!\nsee compute_imputation_data()\n" )
+
+  # die "matching N > M!\n" unless( $nmatch < scalar keys %$data )
+
+  matching_ids = []
+  mc = -1
+  while len(matching_ids) >= nmatch:
+    mc+=1
+    for id in data.keys():
+      if not data[id]['labeled']:
+        continue
+      if abs(data[id]['obs_x'] - score ) <= mc:
+        matching_ids.append(id)
+    if global_verbose > 100:
+      print("matching crit = "+mc+", score = "+score+", n matching = "+len(matching_ids)+"\n" )
+
+  # return a random criterion value
+  id = choice(matching_ids)
+  if global_verbose > 100:
+    print("found id = "+id+", y = "+data[id]['obs_y']+"\n") 
+  return data[id]['obs_y']
+# impute
+
+
+def print_simulaton_options(options):
+  print("\
+    Simulation Options\
+    ------------------\
+    number labeled        : "+options['nl']+"\n\
+    number unlabeled      : "+options['nu']+"\n\
+    population validity   : "+options['pop_r']+"\n\
+    criterion reliabiity  : "+options['crit_rel']+"\n\
+    predictor reliability : "+options['test_rel']+"\n\
+    predictor mean        : "+options['test_mn']+"\n\
+    predictor SD          : "+options['test_sd']+"\n\
+    replication           : "+options['rep'])
+# print_simulaton_options
+
+
+# # calculate mean
+def mean(data):
+  return sum(data)/len(data)
+
+# # calculate min/max
+def minmax(data):
+  return (min(data),max(data))
+
+# calculate median 
+def median(data):
+  data.sort()
+  if len(data) % 2 != 0:
+    return data[ len(data) / 2 ]
+  else:
+    lower = data[int(len(data) / 2)]
+    upper = data[int(len(data) / 2 - 1)]
+    return mean( [lower,upper] )
+
+# # calculate interquartile range
+def interquartile_range(data):
+  data.sort()
+  pct25 = 0
+  pct50 = 0
+  pct75 = 0
+  # 25TH and 75TH percentile
+  thres = int(len(data) / 4 )
+  pct25 = mean([data[thres ], data[ thres + 1 ]])
+  pct75 = mean([data[len(data) - thres ], data[ len(data) - thres - 1 ]] )
+  # median
+  if len(data) % 2 != 0:
+    pct50 = data[ len(data) / 2 ]
+  else:
+    lower = data[int(len(data) / 2)]
+    upper = data[int(len(data) / 2 - 1)]
+    pct50 = mean( [lower,upper] )
+  return (pct25,pct50,pct75)
+
+# calculate SD
+def std_dev(data):
+  sq_dev_sum = 0
+  avg = mean(data)
+  for elem in data:
+    sq_dev_sum += pow((avg - elem ),2)
+  return ( sqrt( sq_dev_sum / ( len(data) - 1 ) ) )
+
+
+
+
+
+
+
+# $|++ # force output to be unbuffered (so we see the progress)
+# Perl cookbook receipe 2.10
+# http://web.deu.edu.tr/doc/oreily/perl/cookbook/ch02_11.htm 
+def gaussian_rand():
+  u1 = 2 * random() - 1
+  u2 = 2 * random() - 1
+  w = u1*u1 + u2*u2
+  while ( w >= 1 ):
+    u1 = 2 * random() - 1
+    u2 = 2 * random() - 1
+    w = u1*u1 + u2*u2
+
+  w = sqrt( (-2 * log(w))  / w )
+  g2 = u1 * w
+  g1 = u2 * w
+  return (g1,g2)
+  # if wantarray:
+    
+  # else:
+  #   return g1
+  # # return both if wanted, else just one
+  # return wantarray ? ($g1, $g2) : $g1
+
+# compute imputation data - creates a hash where $data{$score} is an arrayref to the y scores for that score
+def compute_imputation_data(data,nmatch,num_items):
+  imputation_data = {}
+
+#  print "debug:\n\n\n" # debug
+
+  # die "matching N > M!\n" unless( $nmatch < scalar keys %$data )
+
+  for score in range( 0 , num_items ):
+    matching_ids = []
+    mc = -1
+    matching_ids = []
+    while len(matching_ids) >= nmatch:
+      mc += 1
+      for id in data.keys():
+        if not data[id]['labeled']: # skip unlabeled data
+          continue
+        if abs(data[id]['obs_x'] - score ) <= mc:
+          matching_ids.append(id)
+      #print "debug: nmatch=$nmatch, mc=$mc, score=$score, #ids = ", scalar @matching_ids, "\n" # debug
+    
+
+    # I want the Y-scores, not the ID's so...
+    yscores = []
+    for id in matching_ids:
+      yscores.append(data[id]['obs_y'])
+    if score not in imputation_data.keys():
+      imputation_data[score] = []  
+    imputation_data[score] += yscores
+  # print(data)
+  return imputation_data
+# compute_imputation_data
+
+
+
+def simulate(details,cond,rep,options):
+  # global detailfsimus
+
+  # sanity check options apply defaults
+  if 'nl' in options.keys():
+    nl = options['nl']
+  else:
+    nl = 100
+  if 'nu' in options.keys():
+    nu = options['nu']
+  else:
+    nu  = 200
+  pop_r = options['pop_r']
+  # die( "simulate(): No population validity!\n" ) unless( defined( $pop_r ))
+  if 'crit_rel' in options.keys():
+    crit_rel = options['crit_rel']
+  else:
+    crit_rel = 0.8
+  if 'test_rel' in options.keys():
+    test_rel = options['test_rel']
+  else:
+    test_rel = 0.8
+  if 'test_mn' in options.keys():
+    test_mn = options['test_mn']
+  else:
+    test_mn = 20
+  if 'test_sd' in options.keys():
+    test_sd = options['test_sd']
+  else:
+    test_sd = 3
+  if 'nmatch' in options.keys():
+    nmatch = options['nmatch']
+  else:
+    nmatch = 20
+
+  #print_simulaton_options( $options ) # debug
+
+  # generate samples
+  #printf "%10s %10s %10s %10s\n", qw/id obs_x obs_y labeled/ # debug
+  #my(@xs,@ys) # debug
+  data = {}
+  num_items = 0
+  for id in range( 1, nl+nu ):
+    x1,x2 =  gaussian_rand()
+    x3,x4 =  gaussian_rand()
+    true_x = x1
+    true_y = pop_r * true_x + sqrt( 1 - pop_r**2 ) * x2
+    obs_x = sqrt(test_rel) * true_x + sqrt( 1 - test_rel ) * x3
+    obs_x = int( obs_x * test_sd + test_mn + 0.5 )
+    if obs_x < 0 :
+      obs_x = 0 
+    obs_y = sqrt(crit_rel) * true_y + sqrt( 1 - crit_rel ) * x4
+    obs_y = int( 20 * obs_y + 50 ) # slightly easier to have these be smallish integers
+    if id not in data.keys():
+      data[id] = {}
+    data[id]['obs_x'] = obs_x
+    data[id]['obs_y'] = obs_y
+    if id <= nl:
+      data[id]['labeled'] = 1 
+    else:
+      data[id]['labeled'] = 0
+    if obs_x > num_items :
+      num_items = obs_x 
+    #printf "%10d %10.2f %10.2f %10d\n", $id, $obs_x, $obs_y, $data{$id}{labeled} # debug
+    #push( @xs, $true_x ) # debug
+    #push( @ys, $obs_x ) # debug
+  #printf "Correlation: r = %.3f, N = %d\n", correlation( \@xs, \@ys )**2, $nl # debug
+  #warn "generated $nl labeled and $nu unlabeled cases\n" if( $global_verbose )
+
+  # impute the missing labels for the unlabeled dataset
+
+  imputation_data = compute_imputation_data(data,nmatch,num_items)
+
+ # debug
+ # for score in range( 0 , num_items ) :
+   # print(score+" "+join( ',', sort{ $a <: $b} @{ $$imputation_data{$score}} )
+
+  #print "\nimputation_data:\n", Dumper( $imputation_data ),"\n"
+
+  for id in data.keys(): 
+    if data[id]['labeled']:
+      # print(data)
+      data[id]['y'] = data[id]['obs_y']
+      continue
+
+    #$data{$id}{y} = impute( \%data, $data{$id}{obs_x}, $nmatch )
+    data[id]['y'] = impute(imputation_data, data[id]['obs_x'] )
+
+  # compute validity coefficients
+  
+  x_sup = [] 
+  y_sup = []
+  x_semi = []
+  y_semi = []
+  for id  in data.keys():
+    if data[id]['labeled']:
+      x_sup.append(data[id]['obs_x'])
+    if data[id]['labeled']:
+      y_sup.append(data[id]['y'])
+    x_semi.append(data[id]['obs_x'])
+    y_semi.append(data[id]['y'])
+  # details[cond][rep][r_sup] = correlation( \@x_sup, \@y_sup )
+  # details[cond][rep][r_semi] = correlation( \@x_semi, \@y_semi )
+  # printf( "$cond:$rep: supervised r = %.3f, semi-supervised r = %.3f\n", $details{$cond}{$rep}{r_sup}, $details{$cond}{$rep}{r_semi} ) if( $global_verbose )
+  
+# simulate
+
+global_verbose = 1
+
+# for debugging
+#my @nl_sample_sizes = qw/100/ # labeled
+#my @nu_sample_sizes = qw/20 50 100 200 500 1000/ # unlabled
+#my @pop_vals = qw/0.40/
+#my $num_replications = 5
+
+nl_sample_sizes = [20,50,100,200,500] # labeled
+nu_sample_sizes = [20 ,50 ,100, 200, 500 ,1000] # unlabled
+pop_vals = [0 ,0.20, 0.30, 0.40, 0.60, 0.80]
+num_replications = 500
+test_length = 30
+
+details = {}
+for pop_validity in pop_vals:
+  for nl in nl_sample_sizes:
+    for nu in nu_sample_sizes:
+      for rep in range( 1,num_replications ):
+        cond = "rho="+str(pop_validity)+",NL="+str(nl)+",NU="+str(nu)
+        #print "Replication $rep, NL = $nl, NU = $nu\n"
+        simulate(details, cond, rep,{
+          'nl' : nl,
+          'nu' : nu,
+          'pop_r' : pop_validity,
+          'crit_rel' : 0.70,
+          'test_rel' : 0.80,
+          'test_mn' : 0.67*test_length,
+          'test_sd' : 0.10*test_length,
+          'nmatch' : 5})
+      
+
+## reporting
+
+# warn "reporting is a kludgy!\n"
+
+r_sup = []
+r_semi = []
+for cond in details.keys():
+  for rep in details[cond].keys():
+    r_sup.append(details[cond][rep][r_sup])
+    r_semi.append(details[cond][rep][r_semi])
+  mu_sup = mean(r_sup)
+  mu_semi = mean(r_semi)
+  sd_sup = std_dev(r_sup)
+  sd_semi = std_dev(r_semi)
+
+  print( "cond="+cond+", reps="+str(num_replications)+", sup_r_mn="+str(mu_sup)+", sup_r_sd="+str(sd_sup)+", semi_r_mn="+str(mu_semi)+", semi_r_sd="+sd_semi+"\n")
+
+
+
+
