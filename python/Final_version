@@ -231,10 +231,10 @@ def simulate(details,cond,rep,options):
     details[cond] = {}
   if rep not in details[cond].keys():
     details[cond][rep] = {}
-  details[cond][rep]['r_sup'] = np.correlate( x_sup, y_sup )[0]
-  details[cond][rep]['r_semi'] = np.correlate( x_semi, y_semi )[0]
+  details[cond][rep]['r_sup'] = np.corrcoef( x_sup, y_sup )[0][1]
+  details[cond][rep]['r_semi'] = np.corrcoef( x_semi, y_semi )[0][1]
   if global_verbose :
-    print( str(cond)+":"+str(rep)+": supervised r = "+str(details[cond][rep]['r_sup'])+", semi-supervised r = "+str(details[cond][rep]['r_semi']) )
+    print( str(cond)+":"+str(rep)+": supervised r = {:.3f}, semi-supervised r = {:.3f}".format(details[cond][rep]['r_sup'],details[cond][rep]['r_semi']) )
   
 # simulate
 
@@ -260,22 +260,19 @@ for pop_validity in pop_vals:
           'test_mn' : 0.67*test_length,
           'test_sd' : 0.10*test_length,
           'nmatch' : 5})
-      
 
 ## reporting
 r_sup = []
 r_semi = []
 for cond in details.keys():
   for rep in details[cond].keys():
-    r_sup.append(details[cond][rep][r_sup])
-    r_semi.append(details[cond][rep][r_semi])
+    r_sup.append(details[cond][rep]['r_sup'])
+    r_semi.append(details[cond][rep]['r_semi'])
   mu_sup = mean(r_sup)
   mu_semi = mean(r_semi)
   sd_sup = std_dev(r_sup)
   sd_semi = std_dev(r_semi)
 
-  print( "cond="+cond+", reps="+str(num_replications)+", sup_r_mn="+str(mu_sup)+", sup_r_sd="+str(sd_sup)+", semi_r_mn="+str(mu_semi)+", semi_r_sd="+sd_semi+"\n")
-
-
+  print( "cond="+str(cond)+", reps="+str(num_replications)+", sup_r_mn={:.3f}, sup_r_sd={:.3f}, semi_r_mn={:.3f}, semi_r_sd={:.3f}".format(mu_sup,sd_sup,mu_semi,sd_semi))
 
 
